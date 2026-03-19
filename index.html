@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Berkeley National Security Network</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #f9f8f6;
+    --surface: #ffffff;
+    --border:  rgba(0,0,0,0.10);
+    --text:    #1a1a18;
+    --muted:   #6b6b66;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      #181816;
+      --surface: #222220;
+      --border:  rgba(255,255,255,0.10);
+      --text:    #e8e6e0;
+      --muted:   #9c9a92;
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 24px;
+  }
+
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+
+  .card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 20px 16px;
+  }
+
+  #controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+
+  input[type=text] {
+    font-size: 13px; padding: 5px 10px; border-radius: 6px;
+    border: 0.5px solid var(--border); background: var(--bg);
+    color: var(--text); width: 160px; outline: none;
+  }
+  input[type=text]:focus { border-color: #7F77DD; }
+
+  .mode-btn {
+    font-size: 12px; padding: 4px 12px; border-radius: 20px;
+    border: 0.5px solid var(--border); background: transparent;
+    color: var(--muted); cursor: pointer; transition: all .15s;
+  }
+  .mode-btn.active { background: #EEEDFE; color: #534AB7; border-color: #AFA9EC; }
+  @media (prefers-color-scheme: dark) {
+    .mode-btn.active { background: #26215C; color: #CECBF6; border-color: #3C3489; }
+  }
+
+  #legend { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+  .leg { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+
+  /* SVG legend swatches drawn inline */
+  .leg-dot   { width: 11px; height: 11px; border-radius: 50%; }
+  .leg-ring  { width: 11px; height: 11px; border-radius: 50%; background: transparent; border: 2px solid #7F77DD; }
+  .leg-sep   { width: 1px; height: 14px; background: var(--border); }
+
+  svg { width: 100%; display: block; }
+
+  #tooltip {
+    position: fixed; background: var(--surface); border: 0.5px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; font-size: 13px; pointer-events: none;
+    opacity: 0; transition: opacity .15s; max-width: 240px; z-index: 99;
+    color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+  #tooltip strong { display: block; margin-bottom: 2px; }
+  #tooltip span { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Berkeley National Security Network</h1>
+<p class="subtitle">Faculty and organizations across campus. Drag nodes to reposition.</p>
+
+<div class="card">
+  <div id="controls">
+    <input type="text" id="search" placeholder="Filter by name…" oninput="filterGraph(this.value)">
+    <button class="mode-btn active" onclick="setMode('force',this)">Force layout</button>
+    <button class="mode-btn" onclick="setMode('school',this)">By school</button>
+    <button class="mode-btn" onclick="setMode('org',this)">By organization</button>
+    <button class="mode-btn" onclick="setMode('role',this)">By role</button>
+  </div>
+  <div id="legend">
+    <div class="leg"><div class="leg-dot" style="background:#7F77DD; border:1.5px solid #534AB7"></div>Faculty</div>
+    <div class="leg"><div class="leg-ring"></div>Student</div>
+    <div class="leg-sep"></div>
+    <div class="leg"><div class="leg-dot" style="background:#1D9E75; border:1.5px solid #0F6E56"></div>School</div>
+    <div class="leg"><div class="leg-dot" style="background:#BA7517; border:1.5px solid #854F0B"></div>Organization</div>
+  </div>
+  <svg id="viz" viewBox="0 0 780 460"></svg>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ─── DATA — School | Organization | Person | Role ─────────────────────────────
+const rows = [
+  { school: "Goldman", org: "BRSL", person: "Andrew Reddie",    role: "faculty"  },
+  { school: "Goldman", org: "BISG", person: "Janet Napolitano", role: "faculty"  },
+  { school: "Goldman", org: "BRSL", person: "Jeff Fields",      role: "faculty"  },
+    { school: "Goldman", org: "TBD", person: "Sean",      role: "student"  },
+  { school: "History", org: "IIS",  person: "Daniel Sargent",   role: "faculty"  },
+    { school: "History", org: "Alexander Hamilton Society",  person: "Students",   role: "student"  },
+  { school: "Haas",    org: "DDU",  person: "Haas Students",    role: "student"  },
+    { school: "Law",    org: "BCLT",  person: "Chris Hoofnagle",    role: "faculty"  },
+        { school: "Law",    org: "Public Law & Policy Program",  person: "John Yoo",    role: "faculty"  },
+            { school: "Law",    org: "Miller Center",  person: "Elena Chachko",    role: "faculty"  },
+      { school: "Law",    org: "",  person: "Kim",    role: "student"  },
+       { school: "Law",    org: "",  person: "Nathan",    role: "student"  },
+      { school: "UCOP",    org: "",  person: "Philip Harmann",    role: "faculty"  },
+ { school: "Political Science",    org: "BASC",  person: "Vinny  Aggarwal",    role: "faculty"  },
+  { school: "LBNL",    org: "BASC",  person: "Vinny  Aggarwal",    role: "faculty"  },
+        { school: "Nuclear Engineering",    org: "LBNL",  person: "Karl van Bibber",    role: "faculty"  },
+        { school: "Nuclear Engineering",    org: "NPWG",  person: "Bethany Goldblum",    role: "faculty"  },
+      { school: "Army ROTC",    org: "ROTC",  person: "TKTK",    role: "faculty"  },
+        { school: "Navy ROTC",    org: "ROTC",  person: "TKTK",    role: "faculty"  },
+          { school: "AF ROTC",    org: "ROTC",  person: "TKTK",    role: "faculty"  },
+        { school: "Veterans Club",    org: "ROTC",  person: "",    role: "student"  },
+ { school: "Political Science",    org: "Helen Diller",  person: "Ron Hassner",    role: "faculty"  },
+ { school: "I School",    org: "Cyber Clinic",  person: "Elijah Baucom",    role: "faculty"  },
+ { school: "Political Science",    org: "",  person: "Marika Landau-Wells",    role: "faculty"  },
+
+
+];
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COLORS = { school: "#1D9E75", org: "#BA7517", person: "#7F77DD" };
+const STROKE  = { school: "#0F6E56", org: "#854F0B", person: "#534AB7" };
+const RADII   = { person: 14, school: 22, org: 19 };
+
+// Role visual constants
+const ROLE_FILL        = { faculty: "#7F77DD", student: "var(--surface)" };
+const ROLE_INNER_TEXT  = { faculty: "#ffffff",  student: "#534AB7" };
+const ROLE_STROKE_W    = { faculty: 1,          student: 2.5 };
+
+let currentMode = "force", currentFilter = "";
+
+const schools = [...new Set(rows.map(r => r.school))];
+const orgs    = [...new Set(rows.map(r => r.org))];
+const persons = [...new Set(rows.map(r => r.person))];
+
+const personOrg    = Object.fromEntries(rows.map(r => [r.person, r.org]));
+const personSchool = Object.fromEntries(rows.map(r => [r.person, r.school]));
+const personRole   = Object.fromEntries(rows.map(r => [r.person, r.role]));
+const orgSchool    = Object.fromEntries(rows.map(r => [r.org, r.school]));
+
+function buildGraph() {
+  const nodes = [
+    ...schools.map(s => ({ id: s, type: "school" })),
+    ...orgs.map(o    => ({ id: o, type: "org" })),
+    ...persons.map(p => ({ id: p, type: "person", role: personRole[p] })),
+  ];
+  const seen = new Set();
+  const links = [];
+  rows.forEach(r => {
+    const k1 = `${r.person}|${r.org}`;
+    if (!seen.has(k1)) { links.push({ source: r.person, target: r.org,    rel: "member" }); seen.add(k1); }
+    const k2 = `${r.org}|${r.school}`;
+    if (!seen.has(k2)) { links.push({ source: r.org,    target: r.school, rel: "housed" }); seen.add(k2); }
+  });
+  return { nodes, links };
+}
+
+const W = 780, H = 460;
+const svg   = d3.select("#viz").attr("viewBox", `0 0 ${W} ${H}`);
+const linkG = svg.append("g");
+const nodeG = svg.append("g");
+
+let sim, linkSel;
+
+function expandActive(links, matched) {
+  for (let pass = 0; pass < 2; pass++) {
+    links.forEach(l => {
+      const s = l.source.id||l.source, t = l.target.id||l.target;
+      if (matched.has(s)) matched.add(t);
+      if (matched.has(t)) matched.add(s);
+    });
+  }
+}
+
+function draw(filter = "") {
+  const { nodes, links } = buildGraph();
+
+  let active = new Set(nodes.map(n => n.id));
+  if (filter) {
+    const matched = new Set(nodes.filter(n => n.id.toLowerCase().includes(filter.toLowerCase())).map(n => n.id));
+    expandActive(links, matched);
+    active = matched;
+  }
+
+  if (sim) sim.stop();
+  nodes.forEach(n => {
+    if (!n.x) { n.x = W/2 + (Math.random()-.5)*220; n.y = H/2 + (Math.random()-.5)*180; }
+  });
+
+  sim = d3.forceSimulation(nodes)
+    .force("link",    d3.forceLink(links).id(d => d.id)
+                        .distance(d => d.rel==="housed" ? 130 : 85)
+                        .strength(d => d.rel==="housed" ? 0.75 : 0.6))
+    .force("charge",  d3.forceManyBody().strength(-320))
+    .force("center",  d3.forceCenter(W/2, H/2))
+    .force("collide", d3.forceCollide(36));
+
+  if (currentMode === "school") {
+    const pos = {};
+    schools.forEach((s, i) => {
+      const a = (i / schools.length) * Math.PI * 2 - Math.PI/2;
+      pos[s] = { x: W/2 + Math.cos(a)*200, y: H/2 + Math.sin(a)*160 };
+    });
+    sim.force("gx", d3.forceX(n => {
+      if (n.type==="school") return pos[n.id]?.x ?? W/2;
+      if (n.type==="org")    return pos[orgSchool[n.id]]?.x ?? W/2;
+      return pos[personSchool[n.id]]?.x ?? W/2;
+    }).strength(0.42));
+    sim.force("gy", d3.forceY(n => {
+      if (n.type==="school") return pos[n.id]?.y ?? H/2;
+      if (n.type==="org")    return pos[orgSchool[n.id]]?.y ?? H/2;
+      return pos[personSchool[n.id]]?.y ?? H/2;
+    }).strength(0.42));
+
+  } else if (currentMode === "org") {
+    const pos = {};
+    orgs.forEach((o, i) => {
+      const a = (i / orgs.length) * Math.PI * 2 - Math.PI/2;
+      pos[o] = { x: W/2 + Math.cos(a)*200, y: H/2 + Math.sin(a)*160 };
+    });
+    sim.force("gx", d3.forceX(n => {
+      if (n.type==="org")    return pos[n.id]?.x ?? W/2;
+      if (n.type==="person") return pos[personOrg[n.id]]?.x ?? W/2;
+      return W/2;
+    }).strength(0.42));
+    sim.force("gy", d3.forceY(n => {
+      if (n.type==="org")    return pos[n.id]?.y ?? H/2;
+      if (n.type==="person") return pos[personOrg[n.id]]?.y ?? H/2;
+      return H/2;
+    }).strength(0.42));
+
+  } else if (currentMode === "role") {
+    // faculty left, students right; schools/orgs centre
+    const roleX = { faculty: W * 0.28, student: W * 0.72 };
+    sim.force("gx", d3.forceX(n => {
+      if (n.type !== "person") return W/2;
+      return roleX[n.role] ?? W/2;
+    }).strength(0.45));
+    sim.force("gy", d3.forceY(H/2).strength(0.06));
+  }
+
+  linkG.selectAll("line").remove();
+  const visLinks = links.filter(l => {
+    const s = typeof l.source==="object"?l.source.id:l.source;
+    const t = typeof l.target==="object"?l.target.id:l.target;
+    return active.has(s) && active.has(t);
+  });
+  linkSel = linkG.selectAll("line").data(visLinks).enter().append("line")
+    .attr("stroke", d => d.rel==="housed" ? COLORS.school : COLORS.org)
+    .attr("stroke-width", d => d.rel==="housed" ? 1.5 : 1)
+    .attr("stroke-opacity", d => d.rel==="housed" ? 0.4 : 0.3)
+    .attr("stroke-dasharray", d => d.rel==="housed" ? null : "3 3");
+
+  nodeG.selectAll("g.node").remove();
+
+  const nodeEnter = nodeG.selectAll("g.node").data(nodes).enter()
+    .append("g").attr("class","node")
+    .style("cursor","grab")
+    .style("opacity", d => active.has(d.id) ? 1 : 0.12)
+    .call(d3.drag()
+      .on("start", (e,d) => { if(!e.active) sim.alphaTarget(.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on("drag",  (e,d) => { d.fx=e.x; d.fy=e.y; })
+      .on("end",   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+
+  // Outer circle — role-aware for person nodes
+  nodeEnter.append("circle")
+    .attr("r", d => RADII[d.type])
+    .attr("fill", d => {
+      if (d.type !== "person") return COLORS[d.type];
+      return d.role === "faculty" ? COLORS.person : "var(--surface)";
+    })
+    .attr("stroke", d => STROKE[d.type] ?? STROKE.person)
+    .attr("stroke-width", d => d.type === "person" ? ROLE_STROKE_W[d.role ?? "faculty"] : 1)
+    .on("mouseover", (e, d) => {
+      const tt = document.getElementById("tooltip");
+      let detail = "";
+      if (d.type==="person") {
+        const roleLabel = d.role === "faculty" ? "Faculty" : "Student";
+        detail = `${roleLabel} · ${personOrg[d.id]} · ${personSchool[d.id]}`;
+      } else if (d.type==="org") {
+        const members = [...new Set(rows.filter(r=>r.org===d.id).map(r=>r.person))].join(", ");
+        detail = `${orgSchool[d.id]} · ${members}`;
+      } else {
+        detail = [...new Set(rows.filter(r=>r.school===d.id).map(r=>r.org))].join(", ");
+      }
+      const typeLabel = { person: "Person", school: "School", org: "Organization" }[d.type];
+      tt.innerHTML = `<strong>${d.id}</strong><span>${typeLabel} · ${detail}</span>`;
+      tt.style.opacity=1; tt.style.left=(e.clientX+14)+"px"; tt.style.top=(e.clientY-10)+"px";
+    })
+    .on("mousemove", e => {
+      const tt=document.getElementById("tooltip");
+      tt.style.left=(e.clientX+14)+"px"; tt.style.top=(e.clientY-10)+"px";
+    })
+    .on("mouseout", () => document.getElementById("tooltip").style.opacity=0);
+
+  // Text inside node
+  nodeEnter.append("text")
+    .attr("text-anchor","middle").attr("dominant-baseline","central")
+    .attr("font-size", d => d.type==="person" ? 9 : 10)
+    .attr("font-weight","500")
+    .attr("fill", d => {
+      if (d.type !== "person") return "#fff";
+      return d.role === "student" ? "#534AB7" : "#fff";
+    })
+    .attr("pointer-events","none")
+    .text(d => {
+      if (d.type==="school" || d.type==="org")
+        return d.id.length <= 5 ? d.id : d.id.split(" ").map(w=>w[0]).join("").slice(0,4);
+      return d.id.split(" ").map(w=>w[0]).join("").slice(0,3);
+    });
+
+  // Name label below node
+  nodeEnter.append("text")
+    .attr("text-anchor","middle")
+    .attr("dy", d => RADII[d.type] + 13)
+    .attr("font-size", 10)
+    .attr("fill","var(--muted)").attr("pointer-events","none")
+    .text(d => {
+      if (d.type==="school") return d.id;
+      if (d.type==="person") return d.id.split(" ").slice(-1)[0];
+      return "";
+    });
+
+  function cx(v){ return Math.max(30, Math.min(W-30, v)); }
+  function cy(v){ return Math.max(30, Math.min(H-30, v)); }
+
+  sim.on("tick", () => {
+    linkSel
+      .attr("x1",d=>cx(d.source.x)).attr("y1",d=>cy(d.source.y))
+      .attr("x2",d=>cx(d.target.x)).attr("y2",d=>cy(d.target.y));
+    nodeG.selectAll("g.node").attr("transform", d=>`translate(${cx(d.x)},${cy(d.y)})`);
+  });
+}
+
+function setMode(mode, btn) {
+  currentMode = mode;
+  document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  draw(currentFilter);
+}
+function filterGraph(val) { currentFilter = val; draw(val); }
+
+draw();
+</script>
+</body>
+</html>
