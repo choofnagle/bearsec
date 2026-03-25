@@ -40,15 +40,18 @@
     background: var(--surface);
     border: 0.5px solid var(--border);
     border-radius: 10px;
-    padding: 20px 20px 16px;
+    padding: 20px 20px 12px;
   }
 
-  #controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  #controls {
+    display: flex; gap: 8px; align-items: center;
+    flex-wrap: wrap; margin-bottom: 10px;
+  }
 
   input[type=text] {
     font-size: 13px; padding: 5px 10px; border-radius: 6px;
     border: 0.5px solid var(--border); background: var(--bg);
-    color: var(--text); width: 160px; outline: none;
+    color: var(--text); width: 170px; outline: none;
   }
   input[type=text]:focus { border-color: #7F77DD; }
 
@@ -62,30 +65,34 @@
     .mode-btn.active { background: #26215C; color: #CECBF6; border-color: #3C3489; }
   }
 
-  #legend { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+  #legend {
+    display: flex; gap: 18px; flex-wrap: wrap;
+    margin-bottom: 10px; align-items: center;
+  }
   .leg { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .leg-dot  { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+  .leg-ring { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #7F77DD; flex-shrink: 0; }
+  .leg-sep  { width: 1px; height: 14px; background: var(--border); }
 
-  /* SVG legend swatches drawn inline */
-  .leg-dot   { width: 11px; height: 11px; border-radius: 50%; }
-  .leg-ring  { width: 11px; height: 11px; border-radius: 50%; background: transparent; border: 2px solid #7F77DD; }
-  .leg-sep   { width: 1px; height: 14px; background: var(--border); }
-
-  svg { width: 100%; display: block; }
+  svg { width: 100%; display: block; cursor: default; }
 
   #tooltip {
-    position: fixed; background: var(--surface); border: 0.5px solid var(--border);
-    border-radius: 8px; padding: 8px 12px; font-size: 13px; pointer-events: none;
-    opacity: 0; transition: opacity .15s; max-width: 240px; z-index: 99;
-    color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    position: fixed; background: var(--surface);
+    border: 0.5px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; pointer-events: none;
+    opacity: 0; transition: opacity .12s; max-width: 260px;
+    z-index: 99; color: var(--text);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    line-height: 1.5;
   }
   #tooltip strong { display: block; margin-bottom: 2px; }
-  #tooltip span { font-size: 11px; color: var(--muted); }
+  #tooltip .tt-detail { font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
 
 <h1>Berkeley National Security Network</h1>
-<p class="subtitle">Faculty and organizations across campus. Drag nodes to reposition.</p>
+<p class="subtitle">Faculty and organizations across campus — hover to inspect, drag to reposition.</p>
 
 <div class="card">
   <div id="controls">
@@ -96,68 +103,95 @@
     <button class="mode-btn" onclick="setMode('role',this)">By role</button>
   </div>
   <div id="legend">
-    <div class="leg"><div class="leg-dot" style="background:#7F77DD; border:1.5px solid #534AB7"></div>Faculty</div>
+    <div class="leg"><div class="leg-dot" style="background:#7F77DD;border:1.5px solid #534AB7"></div>Faculty</div>
     <div class="leg"><div class="leg-ring"></div>Student</div>
     <div class="leg-sep"></div>
-    <div class="leg"><div class="leg-dot" style="background:#1D9E75; border:1.5px solid #0F6E56"></div>School</div>
-    <div class="leg"><div class="leg-dot" style="background:#BA7517; border:1.5px solid #854F0B"></div>Organization</div>
+    <div class="leg"><div class="leg-dot" style="background:#1D9E75;border:1.5px solid #0F6E56"></div>School / dept</div>
+    <div class="leg"><div class="leg-dot" style="background:#BA7517;border:1.5px solid #854F0B"></div>Organization</div>
   </div>
-  <svg id="viz" viewBox="0 0 780 460"></svg>
+  <svg id="viz" viewBox="0 0 900 560"></svg>
 </div>
 
 <div id="tooltip"></div>
 
 <script>
-// ─── DATA — School | Organization | Person | Role ─────────────────────────────
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+// One row per School | Org | Person | Role.
+// A person may appear in multiple rows (multiple org memberships).
+// Placeholder-only rows (no named person) are omitted.
 const rows = [
-  { school: "Goldman", org: "BRSL", person: "Andrew Reddie",    role: "faculty"  },
-  { school: "Goldman", org: "BISG", person: "Janet Napolitano", role: "faculty"  },
-  { school: "Goldman", org: "BRSL", person: "Jeff Fields",      role: "faculty"  },
-    { school: "Goldman", org: "TBD", person: "Sean",      role: "student"  },
-  { school: "History", org: "IIS",  person: "Daniel Sargent",   role: "faculty"  },
-    { school: "History", org: "Alexander Hamilton Society",  person: "Students",   role: "student"  },
-  { school: "Haas",    org: "DDU",  person: "Haas Students",    role: "student"  },
-    { school: "Law",    org: "BCLT",  person: "Chris Hoofnagle",    role: "faculty"  },
-        { school: "Law",    org: "Public Law & Policy Program",  person: "John Yoo",    role: "faculty"  },
-            { school: "Law",    org: "Miller Center",  person: "Elena Chachko",    role: "faculty"  },
-      { school: "Law",    org: "",  person: "Kim",    role: "student"  },
-       { school: "Law",    org: "",  person: "Nathan",    role: "student"  },
-      { school: "UCOP",    org: "",  person: "Philip Harmann",    role: "faculty"  },
- { school: "Political Science",    org: "BASC",  person: "Vinny  Aggarwal",    role: "faculty"  },
-  { school: "LBNL",    org: "BASC",  person: "Vinny  Aggarwal",    role: "faculty"  },
-        { school: "Nuclear Engineering",    org: "LBNL",  person: "Karl van Bibber",    role: "faculty"  },
-        { school: "Nuclear Engineering",    org: "NPWG",  person: "Bethany Goldblum",    role: "faculty"  },
-      { school: "ROTCs",    org: "",  person: "TKTK",    role: "faculty"  },
-//        { school: "Navy ROTC",    org: "ROTC",  person: "TKTK",    role: "faculty"  },
-//          { school: "AF ROTC",    org: "ROTC",  person: "TKTK",    role: "faculty"  },
-        { school: "Veterans Club",    org: "ROTC",  person: "",    role: "student"  },
- { school: "Political Science",    org: "Helen Diller",  person: "Ron Hassner",    role: "faculty"  },
- { school: "I School",    org: "Cyber Clinic",  person: "Elijah Baucom",    role: "faculty"  },
- { school: "Political Science",    org: "",  person: "Marika Landau-Wells",    role: "faculty"  },
- { school: "History",    org: "MIRTH",  person: "",    role: "faculty"  },
+  // Goldman School of Public Policy
+  { school: "Goldman",           org: "BRSL",              person: "Andrew Reddie",       role: "faculty" },
+  { school: "Goldman",           org: "BRSL",              person: "Jeff Fields",         role: "faculty" },
+  { school: "Goldman",           org: "BISG",              person: "Janet Napolitano",    role: "faculty" },
+  { school: "Goldman",           org: "H4D Course",        person: "Sean",                role: "student" },
 
+  // Department of History
+  { school: "History",           org: "IIS",               person: "Daniel Sargent",      role: "faculty" },
+  { school: "History",           org: "NextGen FPI",       person: "NextGen Students",    role: "student" },
+  { school: "History",           org: "Hamilton Society",  person: "AHS Students",        role: "student" },
+
+  // Haas School of Business
+  { school: "Haas",              org: "DDU",               person: "DDU Students",        role: "student" },
+
+  // School of Law
+  { school: "Law",               org: "BCLT",              person: "Chris Hoofnagle",     role: "faculty" },
+  { school: "Law",               org: "Public Law & Policy", person: "John Yoo",          role: "faculty" },
+  { school: "Law",               org: "Miller Institute",  person: "Elena Chachko",       role: "faculty" },
+  { school: "Law",               org: "Law (other)",       person: "Kim",                 role: "student" },
+  { school: "Law",               org: "Law (other)",       person: "Nathan",              role: "student" },
+
+  // Department of Political Science
+  { school: "Political Science", org: "BASC",              person: "Vinod Aggarwal",      role: "faculty" },
+  { school: "Political Science", org: "Helen Diller Inst", person: "Ron Hassner",         role: "faculty" },
+  { school: "Political Science", org: "Political Science", person: "Marika Landau-Wells", role: "faculty" },
+
+  // Department of Nuclear Engineering
+  { school: "Nuclear Eng.",      org: "LBNL",              person: "Karl van Bibber",     role: "faculty" },
+  { school: "Nuclear Eng.",      org: "NPWG",              person: "Bethany Goldblum",    role: "faculty" },
+  { school: "Nuclear Eng.",      org: "NSSC",              person: "Bethany Goldblum",    role: "faculty" },
+
+  // Engineering / Computer Science
+  { school: "EECS",              org: "EECS Security",     person: "Dawn Song",           role: "faculty" },
+  { school: "EECS",              org: "EECS Security",     person: "Vern Paxson",         role: "faculty" },
+  { school: "EECS",              org: "Blum Center",       person: "Kaitie Penry",        role: "faculty" },
+  { school: "EECS",              org: "NSIS Berkeley",     person: "NSIS Students",       role: "student" },
+
+  // School of Information
+  { school: "I School",          org: "Cyber Clinic",      person: "Elijah Baucom",       role: "faculty" },
+
+  // Military Affiliates
+  { school: "Military",          org: "Veterans Club",     person: "Veterans",            role: "student" },
 ];
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COLORS = { school: "#1D9E75", org: "#BA7517", person: "#7F77DD" };
 const STROKE  = { school: "#0F6E56", org: "#854F0B", person: "#534AB7" };
-const RADII   = { person: 14, school: 22, org: 19 };
-
-// Role visual constants
-const ROLE_FILL        = { faculty: "#7F77DD", student: "var(--surface)" };
-const ROLE_INNER_TEXT  = { faculty: "#ffffff",  student: "#534AB7" };
-const ROLE_STROKE_W    = { faculty: 1,          student: 2.5 };
+const RADII   = { school: 22, org: 17, person: 13 };
 
 let currentMode = "force", currentFilter = "";
 
+// Unique node lists
 const schools = [...new Set(rows.map(r => r.school))];
 const orgs    = [...new Set(rows.map(r => r.org))];
 const persons = [...new Set(rows.map(r => r.person))];
 
-const personOrg    = Object.fromEntries(rows.map(r => [r.person, r.org]));
-const personSchool = Object.fromEntries(rows.map(r => [r.person, r.school]));
-const personRole   = Object.fromEntries(rows.map(r => [r.person, r.role]));
-const orgSchool    = Object.fromEntries(rows.map(r => [r.org, r.school]));
+// Multi-value lookups (person may belong to multiple orgs/schools)
+const personOrgs   = {}, personSchools = {}, personRole = {};
+rows.forEach(r => {
+  if (!personOrgs[r.person])    personOrgs[r.person]    = [];
+  if (!personSchools[r.person]) personSchools[r.person] = [];
+  if (!personOrgs[r.person].includes(r.org))       personOrgs[r.person].push(r.org);
+  if (!personSchools[r.person].includes(r.school)) personSchools[r.person].push(r.school);
+  personRole[r.person] = r.role; // role is consistent per person
+});
+
+// org → schools lookup (org may technically span schools, rare)
+const orgSchools = {};
+rows.forEach(r => {
+  if (!orgSchools[r.org]) orgSchools[r.org] = [];
+  if (!orgSchools[r.org].includes(r.school)) orgSchools[r.org].push(r.school);
+});
 
 function buildGraph() {
   const nodes = [
@@ -165,28 +199,43 @@ function buildGraph() {
     ...orgs.map(o    => ({ id: o, type: "org" })),
     ...persons.map(p => ({ id: p, type: "person", role: personRole[p] })),
   ];
+
   const seen = new Set();
   const links = [];
   rows.forEach(r => {
-    const k1 = `${r.person}|${r.org}`;
-    if (!seen.has(k1)) { links.push({ source: r.person, target: r.org,    rel: "member" }); seen.add(k1); }
-    const k2 = `${r.org}|${r.school}`;
-    if (!seen.has(k2)) { links.push({ source: r.org,    target: r.school, rel: "housed" }); seen.add(k2); }
+    const k1 = `${r.person}||${r.org}`;
+    if (!seen.has(k1)) {
+      links.push({ source: r.person, target: r.org,    rel: "member" });
+      seen.add(k1);
+    }
+    const k2 = `${r.org}||${r.school}`;
+    if (!seen.has(k2)) {
+      links.push({ source: r.org,    target: r.school, rel: "housed" });
+      seen.add(k2);
+    }
   });
   return { nodes, links };
 }
 
-const W = 780, H = 460;
+const W = 900, H = 560;
 const svg   = d3.select("#viz").attr("viewBox", `0 0 ${W} ${H}`);
 const linkG = svg.append("g");
 const nodeG = svg.append("g");
+
+// Zoom & pan
+svg.call(d3.zoom()
+  .scaleExtent([0.4, 3])
+  .on("zoom", e => {
+    linkG.attr("transform", e.transform);
+    nodeG.attr("transform", e.transform);
+  }));
 
 let sim, linkSel;
 
 function expandActive(links, matched) {
   for (let pass = 0; pass < 2; pass++) {
     links.forEach(l => {
-      const s = l.source.id||l.source, t = l.target.id||l.target;
+      const s = l.source.id || l.source, t = l.target.id || l.target;
       if (matched.has(s)) matched.add(t);
       if (matched.has(t)) matched.add(s);
     });
@@ -198,92 +247,100 @@ function draw(filter = "") {
 
   let active = new Set(nodes.map(n => n.id));
   if (filter) {
-    const matched = new Set(nodes.filter(n => n.id.toLowerCase().includes(filter.toLowerCase())).map(n => n.id));
+    const matched = new Set(
+      nodes.filter(n => n.id.toLowerCase().includes(filter.toLowerCase())).map(n => n.id)
+    );
     expandActive(links, matched);
     active = matched;
   }
 
   if (sim) sim.stop();
   nodes.forEach(n => {
-    if (!n.x) { n.x = W/2 + (Math.random()-.5)*220; n.y = H/2 + (Math.random()-.5)*180; }
+    if (!n.x) {
+      n.x = W / 2 + (Math.random() - .5) * 280;
+      n.y = H / 2 + (Math.random() - .5) * 220;
+    }
   });
 
   sim = d3.forceSimulation(nodes)
     .force("link",    d3.forceLink(links).id(d => d.id)
-                        .distance(d => d.rel==="housed" ? 130 : 85)
-                        .strength(d => d.rel==="housed" ? 0.75 : 0.6))
-    .force("charge",  d3.forceManyBody().strength(-320))
-    .force("center",  d3.forceCenter(W/2, H/2))
-    .force("collide", d3.forceCollide(36));
+                        .distance(d => d.rel === "housed" ? 120 : 80)
+                        .strength(d => d.rel === "housed" ? 0.7 : 0.55))
+    .force("charge",  d3.forceManyBody().strength(-260))
+    .force("center",  d3.forceCenter(W / 2, H / 2))
+    .force("collide", d3.forceCollide(d => RADII[d.type] + 10));
 
+  // ── Grouping modes ──────────────────────────────────────────────────────────
   if (currentMode === "school") {
     const pos = {};
     schools.forEach((s, i) => {
-      const a = (i / schools.length) * Math.PI * 2 - Math.PI/2;
-      pos[s] = { x: W/2 + Math.cos(a)*200, y: H/2 + Math.sin(a)*160 };
+      const a = (i / schools.length) * Math.PI * 2 - Math.PI / 2;
+      pos[s] = { x: W / 2 + Math.cos(a) * 230, y: H / 2 + Math.sin(a) * 185 };
     });
     sim.force("gx", d3.forceX(n => {
-      if (n.type==="school") return pos[n.id]?.x ?? W/2;
-      if (n.type==="org")    return pos[orgSchool[n.id]]?.x ?? W/2;
-      return pos[personSchool[n.id]]?.x ?? W/2;
-    }).strength(0.42));
+      if (n.type === "school") return pos[n.id]?.x ?? W / 2;
+      if (n.type === "org")    return pos[orgSchools[n.id]?.[0]]?.x ?? W / 2;
+      return pos[personSchools[n.id]?.[0]]?.x ?? W / 2;
+    }).strength(0.40));
     sim.force("gy", d3.forceY(n => {
-      if (n.type==="school") return pos[n.id]?.y ?? H/2;
-      if (n.type==="org")    return pos[orgSchool[n.id]]?.y ?? H/2;
-      return pos[personSchool[n.id]]?.y ?? H/2;
-    }).strength(0.42));
+      if (n.type === "school") return pos[n.id]?.y ?? H / 2;
+      if (n.type === "org")    return pos[orgSchools[n.id]?.[0]]?.y ?? H / 2;
+      return pos[personSchools[n.id]?.[0]]?.y ?? H / 2;
+    }).strength(0.40));
 
   } else if (currentMode === "org") {
     const pos = {};
     orgs.forEach((o, i) => {
-      const a = (i / orgs.length) * Math.PI * 2 - Math.PI/2;
-      pos[o] = { x: W/2 + Math.cos(a)*200, y: H/2 + Math.sin(a)*160 };
+      const a = (i / orgs.length) * Math.PI * 2 - Math.PI / 2;
+      pos[o] = { x: W / 2 + Math.cos(a) * 240, y: H / 2 + Math.sin(a) * 190 };
     });
     sim.force("gx", d3.forceX(n => {
-      if (n.type==="org")    return pos[n.id]?.x ?? W/2;
-      if (n.type==="person") return pos[personOrg[n.id]]?.x ?? W/2;
-      return W/2;
-    }).strength(0.42));
+      if (n.type === "org")    return pos[n.id]?.x ?? W / 2;
+      if (n.type === "person") return pos[personOrgs[n.id]?.[0]]?.x ?? W / 2;
+      return W / 2;
+    }).strength(0.40));
     sim.force("gy", d3.forceY(n => {
-      if (n.type==="org")    return pos[n.id]?.y ?? H/2;
-      if (n.type==="person") return pos[personOrg[n.id]]?.y ?? H/2;
-      return H/2;
-    }).strength(0.42));
+      if (n.type === "org")    return pos[n.id]?.y ?? H / 2;
+      if (n.type === "person") return pos[personOrgs[n.id]?.[0]]?.y ?? H / 2;
+      return H / 2;
+    }).strength(0.40));
 
   } else if (currentMode === "role") {
-    // faculty left, students right; schools/orgs centre
-    const roleX = { faculty: W * 0.28, student: W * 0.72 };
+    // Faculty left, students right, schools/orgs centre
+    const roleX = { faculty: W * 0.22, student: W * 0.78 };
     sim.force("gx", d3.forceX(n => {
-      if (n.type !== "person") return W/2;
-      return roleX[n.role] ?? W/2;
-    }).strength(0.45));
-    sim.force("gy", d3.forceY(H/2).strength(0.06));
+      if (n.type !== "person") return W / 2;
+      return roleX[n.role] ?? W / 2;
+    }).strength(0.44));
+    sim.force("gy", d3.forceY(H / 2).strength(0.04));
   }
 
+  // ── Links ───────────────────────────────────────────────────────────────────
   linkG.selectAll("line").remove();
   const visLinks = links.filter(l => {
-    const s = typeof l.source==="object"?l.source.id:l.source;
-    const t = typeof l.target==="object"?l.target.id:l.target;
+    const s = typeof l.source === "object" ? l.source.id : l.source;
+    const t = typeof l.target === "object" ? l.target.id : l.target;
     return active.has(s) && active.has(t);
   });
   linkSel = linkG.selectAll("line").data(visLinks).enter().append("line")
-    .attr("stroke", d => d.rel==="housed" ? COLORS.school : COLORS.org)
-    .attr("stroke-width", d => d.rel==="housed" ? 1.5 : 1)
-    .attr("stroke-opacity", d => d.rel==="housed" ? 0.4 : 0.3)
-    .attr("stroke-dasharray", d => d.rel==="housed" ? null : "3 3");
+    .attr("stroke", d => d.rel === "housed" ? COLORS.school : COLORS.org)
+    .attr("stroke-width", d => d.rel === "housed" ? 1.5 : 1)
+    .attr("stroke-opacity", d => d.rel === "housed" ? 0.35 : 0.28)
+    .attr("stroke-dasharray", d => d.rel === "housed" ? null : "3 3");
 
+  // ── Nodes ───────────────────────────────────────────────────────────────────
   nodeG.selectAll("g.node").remove();
 
   const nodeEnter = nodeG.selectAll("g.node").data(nodes).enter()
-    .append("g").attr("class","node")
-    .style("cursor","grab")
-    .style("opacity", d => active.has(d.id) ? 1 : 0.12)
+    .append("g").attr("class", "node")
+    .style("cursor", "grab")
+    .style("opacity", d => active.has(d.id) ? 1 : 0.10)
     .call(d3.drag()
-      .on("start", (e,d) => { if(!e.active) sim.alphaTarget(.3).restart(); d.fx=d.x; d.fy=d.y; })
-      .on("drag",  (e,d) => { d.fx=e.x; d.fy=e.y; })
-      .on("end",   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+      .on("start", (e, d) => { if (!e.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on("drag",  (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on("end",   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
 
-  // Outer circle — role-aware for person nodes
+  // Circle — role-encoded for person nodes
   nodeEnter.append("circle")
     .attr("r", d => RADII[d.type])
     .attr("fill", d => {
@@ -291,65 +348,83 @@ function draw(filter = "") {
       return d.role === "faculty" ? COLORS.person : "var(--surface)";
     })
     .attr("stroke", d => STROKE[d.type] ?? STROKE.person)
-    .attr("stroke-width", d => d.type === "person" ? ROLE_STROKE_W[d.role ?? "faculty"] : 1)
+    .attr("stroke-width", d => {
+      if (d.type !== "person") return 1;
+      return d.role === "student" ? 2 : 1;
+    })
     .on("mouseover", (e, d) => {
       const tt = document.getElementById("tooltip");
-      let detail = "";
-      if (d.type==="person") {
+      let lines = [];
+      if (d.type === "person") {
         const roleLabel = d.role === "faculty" ? "Faculty" : "Student";
-        detail = `${roleLabel} · ${personOrg[d.id]} · ${personSchool[d.id]}`;
-      } else if (d.type==="org") {
-        const members = [...new Set(rows.filter(r=>r.org===d.id).map(r=>r.person))].join(", ");
-        detail = `${orgSchool[d.id]} · ${members}`;
+        lines.push(roleLabel);
+        lines.push("Org: " + (personOrgs[d.id] || []).join(", "));
+        lines.push("School: " + (personSchools[d.id] || []).join(", "));
+      } else if (d.type === "org") {
+        const members = [...new Set(rows.filter(r => r.org === d.id).map(r => r.person))];
+        lines.push("Organization");
+        lines.push("School: " + (orgSchools[d.id] || []).join(", "));
+        lines.push("Members: " + members.join(", "));
       } else {
-        detail = [...new Set(rows.filter(r=>r.school===d.id).map(r=>r.org))].join(", ");
+        const orgList = [...new Set(rows.filter(r => r.school === d.id).map(r => r.org))];
+        lines.push("School / Department");
+        lines.push("Orgs: " + orgList.join(", "));
       }
-      const typeLabel = { person: "Person", school: "School", org: "Organization" }[d.type];
-      tt.innerHTML = `<strong>${d.id}</strong><span>${typeLabel} · ${detail}</span>`;
-      tt.style.opacity=1; tt.style.left=(e.clientX+14)+"px"; tt.style.top=(e.clientY-10)+"px";
+      tt.innerHTML = `<strong>${d.id}</strong><span class="tt-detail">${lines.join("<br>")}</span>`;
+      tt.style.opacity = 1;
+      tt.style.left = (e.clientX + 14) + "px";
+      tt.style.top  = (e.clientY - 10) + "px";
     })
     .on("mousemove", e => {
-      const tt=document.getElementById("tooltip");
-      tt.style.left=(e.clientX+14)+"px"; tt.style.top=(e.clientY-10)+"px";
+      const tt = document.getElementById("tooltip");
+      tt.style.left = (e.clientX + 14) + "px";
+      tt.style.top  = (e.clientY - 10) + "px";
     })
-    .on("mouseout", () => document.getElementById("tooltip").style.opacity=0);
+    .on("mouseout", () => document.getElementById("tooltip").style.opacity = 0);
 
-  // Text inside node
+  // Initials / abbreviation inside node
   nodeEnter.append("text")
-    .attr("text-anchor","middle").attr("dominant-baseline","central")
-    .attr("font-size", d => d.type==="person" ? 9 : 10)
-    .attr("font-weight","500")
+    .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+    .attr("font-size", d => d.type === "person" ? 8.5 : 9.5)
+    .attr("font-weight", "500")
     .attr("fill", d => {
       if (d.type !== "person") return "#fff";
       return d.role === "student" ? "#534AB7" : "#fff";
     })
-    .attr("pointer-events","none")
+    .attr("pointer-events", "none")
     .text(d => {
-      if (d.type==="school" || d.type==="org")
-        return d.id.length <= 5 ? d.id : d.id.split(" ").map(w=>w[0]).join("").slice(0,4);
-      return d.id.split(" ").map(w=>w[0]).join("").slice(0,3);
+      if (d.type === "school" || d.type === "org") {
+        return d.id.length <= 6 ? d.id : d.id.split(/[\s\/]+/).map(w => w[0]).join("").slice(0, 4);
+      }
+      return d.id.split(" ").map(w => w[0]).join("").slice(0, 3);
     });
 
-  // Name label below node
+  // Name label below node (last name for people, full name for schools)
   nodeEnter.append("text")
-    .attr("text-anchor","middle")
-    .attr("dy", d => RADII[d.type] + 13)
-    .attr("font-size", 10)
-    .attr("fill","var(--muted)").attr("pointer-events","none")
+    .attr("text-anchor", "middle")
+    .attr("dy", d => RADII[d.type] + 12)
+    .attr("font-size", 9.5)
+    .attr("fill", "var(--muted)")
+    .attr("pointer-events", "none")
     .text(d => {
-      if (d.type==="school") return d.id;
-      if (d.type==="person") return d.id.split(" ").slice(-1)[0];
+      if (d.type === "school") return d.id;
+      if (d.type === "person") {
+        const parts = d.id.split(" ");
+        // For group nodes like "DDU Students", show as-is; otherwise last name
+        return parts.length === 1 ? d.id : parts[parts.length - 1];
+      }
       return "";
     });
 
-  function cx(v){ return Math.max(30, Math.min(W-30, v)); }
-  function cy(v){ return Math.max(30, Math.min(H-30, v)); }
+  function cx(v) { return Math.max(30, Math.min(W - 30, v)); }
+  function cy(v) { return Math.max(30, Math.min(H - 30, v)); }
 
   sim.on("tick", () => {
     linkSel
-      .attr("x1",d=>cx(d.source.x)).attr("y1",d=>cy(d.source.y))
-      .attr("x2",d=>cx(d.target.x)).attr("y2",d=>cy(d.target.y));
-    nodeG.selectAll("g.node").attr("transform", d=>`translate(${cx(d.x)},${cy(d.y)})`);
+      .attr("x1", d => cx(d.source.x)).attr("y1", d => cy(d.source.y))
+      .attr("x2", d => cx(d.target.x)).attr("y2", d => cy(d.target.y));
+    nodeG.selectAll("g.node")
+      .attr("transform", d => `translate(${cx(d.x)},${cy(d.y)})`);
   });
 }
 
